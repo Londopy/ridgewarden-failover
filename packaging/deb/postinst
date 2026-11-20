@@ -1,0 +1,29 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+    if ! id ridgewarden-failover >/dev/null 2>&1; then
+        adduser --system --group --home /var/lib/ridgewarden-failover --no-create-home ridgewarden-failover
+    fi
+    adduser ridgewarden-failover ridgewarden >/dev/null
+    install -d -m 750 -o ridgewarden-failover -g ridgewarden-failover /var/lib/ridgewarden-failover
+    # an upgrade from when apps ran as the core's user leaves files it owned
+    chown -R ridgewarden-failover:ridgewarden-failover /var/lib/ridgewarden-failover
+    install -d -m 2770 -o ridgewarden -g ridgewarden /var/lib/ridgewarden/imports /var/lib/ridgewarden/exports
+    if [ ! -f /etc/ridgewarden/failover.toml ]; then
+        /usr/bin/ridgewarden-failover --config /etc/ridgewarden/failover.toml init
+        # only the service needs to read it
+    fi
+    # its webhook URLs and passphrases are for this app only, not the other apps
+    # in the ridgewarden group
+    chown root:ridgewarden-failover /etc/ridgewarden/failover.toml
+    chmod 640 /etc/ridgewarden/failover.toml
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload
+        # start once the core is set up; until then there's nothing to follow
+        if [ -f /etc/ridgewarden/ridgewarden.toml ]; then
+            systemctl enable ridgewarden-failover >/dev/null 2>&1 || true
+            systemctl restart ridgewarden-failover || true
+        fi
+    fi
+fi
